@@ -1,0 +1,54 @@
+{
+  "contracts": {
+    "Counter": {
+      "address": "0xC89Ce4735882C9F0f0FE26686c53074E09B0D550",
+      "constructorCode": "608060405234801561001057600080fd5b5060cb8061001f6000396000f3fe",
+      "bodyBytecodeHash": "f5399503aa0d01f17378707aad84ad509e73a8eb823d0b3a71c42b9931ac1967",
+      "localBytecodeHash": "e1f93e35b60ab61084bd9c346dd45806cd6b91ebed52f186bf63444aedc44ed0",
+      "deployedBytecodeHash": "e1f93e35b60ab61084bd9c346dd45806cd6b91ebed52f186bf63444aedc44ed0",
+      "types": {
+        "t_uint256": {
+          "id": "t_uint256",
+          "kind": "elementary",
+          "label": "uint256"
+        }
+      },
+      "storage": [
+        {
+          "contract": "Counter",
+          "path": "contracts/ZeppelinTest.sol",
+          "label": "value",
+          "astId": 3,
+          "type": "t_uint256",
+          "src": "71:20:0"
+        }
+      ],
+      "warnings": {
+        "hasConstructor": false,
+        "hasSelfDestruct": false,
+        "hasDelegateCall": false,
+        "hasInitialValuesInDeclarations": false,
+        "uninitializedBaseContracts": [],
+        "storageUncheckedVars": [],
+        "storageDiff": []
+      }
+    }
+  },
+  "solidityLibs": {},
+  "proxies": {
+    "open-zeppelin-test/Counter": [
+      {
+        "address": "0xCfEB869F69431e42cdB54A4F4f105C19C080A601",
+        "version": "1.0.0",
+        "implementation": "0xC89Ce4735882C9F0f0FE26686c53074E09B0D550",
+        "admin": "0x5b1869D9A4C187F2EAa108f3062412ecf0526b24",
+        "kind": "Upgradeable"
+      }
+    ]
+  },
+  "manifestVersion": "2.2",
+  "version": "1.0.0",
+  "proxyAdmin": {
+    "address": "0x5b1869D9A4C187F2EAa108f3062412ecf0526b24"
+  }
+}
