@@ -1,0 +1,22 @@
+{
+  "name": "class-action-settlement",
+  "version": "1.0.0",
+  "description": "",
+  "main": "compile.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "Jordan Teague",
+  "license": "ISC",
+  "dependencies": {
+    "fs-extra": "^10.0.0",
+    "ganache-cli": "^6.12.2",
+    "mocha": "^9.1.1",
+    "solc": "^0.8.0",
+    "truffle-hdwallet-provider": "^1.0.17",
+    "web3": "^1.5.2"
+  }
+}
