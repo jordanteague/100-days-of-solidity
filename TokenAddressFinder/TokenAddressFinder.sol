@@ -13,8 +13,8 @@ contract TokenAddressFinder {
         _;
     }
 
-    constructor() {
-        admin = msg.sender;
+    constructor(address admin_) {
+        admin = admin_; //@dev in case deployer shouldn't be sole admin (DAO, vault, etc.)
     }
 
     //@dev to keep things simple, no case control. just enter all lowercase. (or case control in a UX)
