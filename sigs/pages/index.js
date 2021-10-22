@@ -90,14 +90,7 @@ class App extends Component {
             const r = "0x" + signature.substring(0, 64);
             const s = "0x" + signature.substring(64, 128);
             const v = parseInt(signature.substring(128, 130), 16);
-
-            this.setState({ r, s, v, signature });
-            console.log("signer:"+signer);
-            console.log("content:"+index);
-            console.log("r:"+r);
-            console.log("s:"+s);
-            console.log("v:"+v);
-            this.setState({ loading1: false });
+            this.setState({ r, s, v, signature, loading1: false });
         }
       }
     );
@@ -126,7 +119,6 @@ class App extends Component {
       s)
     .send({ from: sender });
     this.setState({ loading2: false });
-    console.log(tx);
   }
 
   checkSig = async (event) => {
