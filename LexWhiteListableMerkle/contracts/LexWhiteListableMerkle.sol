@@ -18,7 +18,7 @@ abstract contract LexWhiteListableMerkle is LexOwnable {
     bytes32 merkleRoot;
 
     /// @notice Initialize contract with `whitelistEnabled` status.
-    constructor(bool _whitelistEnabled) {
+    constructor(bool _whitelistEnabled, address _owner) LexOwnable(_owner) {
         whitelistEnabled = _whitelistEnabled;
         emit ToggleWhiteList(_whitelistEnabled);
     }

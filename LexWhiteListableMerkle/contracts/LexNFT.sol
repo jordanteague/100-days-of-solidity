@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma solidity >=0.8.0;
 
 /// @notice Modern and gas efficient ERC-721 + ERC-20/EIP-2612-like implementation.
-
-import './LexWhiteListableMerkle.sol';
-
-contract LexNFT is LexWhiteListableMerkle {
-
+abstract contract LexNFT {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed spender, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
@@ -27,27 +24,22 @@ contract LexNFT is LexWhiteListableMerkle {
     bytes32 public constant PERMIT_ALL_TYPEHASH =
         keccak256("Permit(address owner,address spender,uint256 nonce,uint256 deadline)");
 
-    uint256 internal immutable DOMAIN_SEPARATOR_CHAIN_ID;
-    bytes32 internal immutable _DOMAIN_SEPARATOR;
+    uint256 internal immutable INITIAL_CHAIN_ID;
+
+    bytes32 internal immutable INITIAL_DOMAIN_SEPARATOR;
 
     mapping(uint256 => uint256) public nonces;
     mapping(address => uint256) public noncesForAll;
 
     constructor(
         string memory _name,
-        string memory _symbol,
-        uint256 tokenId,
-        string memory _tokenURI,
-        address owner,
-        bool _whitelistEnabled
-    ) LexWhiteListableMerkle(_whitelistEnabled){
+        string memory _symbol
+    ) {
         name = _name;
         symbol = _symbol;
 
-        DOMAIN_SEPARATOR_CHAIN_ID = block.chainid;
-        _DOMAIN_SEPARATOR = _calculateDomainSeparator();
-
-        _mint(owner, tokenId, _tokenURI);
+        INITIAL_CHAIN_ID = block.chainid;
+        INITIAL_DOMAIN_SEPARATOR = _calculateDomainSeparator();
     }
 
     function _calculateDomainSeparator() internal view returns (bytes32 domainSeperator) {
@@ -63,14 +55,14 @@ contract LexNFT is LexWhiteListableMerkle {
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32 domainSeperator) {
-        domainSeperator = block.chainid == DOMAIN_SEPARATOR_CHAIN_ID ? _DOMAIN_SEPARATOR : _calculateDomainSeparator();
+        domainSeperator = block.chainid == INITIAL_CHAIN_ID ? INITIAL_DOMAIN_SEPARATOR : _calculateDomainSeparator();
     }
 
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool supported) {
-        supported = interfaceId == 0x80ac58cd || interfaceId == 0x5b5e139f;
+    function supportsInterface(bytes4 interfaceId) public pure returns (bool supported) {
+        supported = interfaceId == 0x80ac58cd || interfaceId == 0x5b5e139f || interfaceId == 0x01ffc9a7;
     }
 
-    function approve(address spender, uint256 tokenId) external {
+    function approve(address spender, uint256 tokenId) public virtual {
         address owner = ownerOf[tokenId];
 
         require(msg.sender == owner || isApprovedForAll[owner][msg.sender], "NOT_APPROVED");
@@ -80,18 +72,18 @@ contract LexNFT is LexWhiteListableMerkle {
         emit Approval(owner, spender, tokenId);
     }
 
-    function setApprovalForAll(address operator, bool approved) external {
+    function setApprovalForAll(address operator, bool approved) public virtual {
         isApprovedForAll[msg.sender][operator] = approved;
 
         emit ApprovalForAll(msg.sender, operator, approved);
     }
 
-    function transfer(address to, uint256 tokenId) external {
+    function transfer(address to, uint256 tokenId) public virtual {
         require(msg.sender == ownerOf[tokenId], "NOT_OWNER");
 
-        // This is safe because ownership is checked
+        /// @dev This is safe because ownership is checked
         // against decrement, and sum of all user
-        // balances can't exceed type(uint256).max!
+        // balances can't exceed 'type(uint256).max'.
         unchecked {
             balanceOf[msg.sender]--;
 
@@ -105,7 +97,7 @@ contract LexNFT is LexWhiteListableMerkle {
         emit Transfer(msg.sender, to, tokenId);
     }
 
-    function transferFrom(address, address to, uint256 tokenId) public {
+    function transferFrom(address, address to, uint256 tokenId) public virtual {
         address owner = ownerOf[tokenId];
 
         require(
@@ -115,9 +107,9 @@ contract LexNFT is LexWhiteListableMerkle {
             "NOT_APPROVED"
         );
 
-        // This is safe because ownership is checked
+        /// @dev This is safe because ownership is checked
         // against decrement, and sum of all user
-        // balances can't exceed type(uint256).max!
+        // balances can't exceed 'type(uint256).max'.
         unchecked {
             balanceOf[owner]--;
 
@@ -131,15 +123,15 @@ contract LexNFT is LexWhiteListableMerkle {
         emit Transfer(owner, to, tokenId);
     }
 
-    function safeTransferFrom(address, address to, uint256 tokenId) external {
+    function safeTransferFrom(address, address to, uint256 tokenId) public virtual {
         safeTransferFrom(address(0), to, tokenId, "");
     }
 
-    function safeTransferFrom(address, address to, uint256 tokenId, bytes memory data) public {
+    function safeTransferFrom(address, address to, uint256 tokenId, bytes memory data) public virtual {
         transferFrom(address(0), to, tokenId);
 
         if (to.code.length != 0) {
-            // selector = `onERC721Received(address,address,uint,bytes)`
+            /// @dev selector = `onERC721Received(address,address,uint,bytes)`.
             (, bytes memory returned) = to.staticcall(abi.encodeWithSelector(0x150b7a02,
                 msg.sender, address(0), tokenId, data));
 
@@ -156,12 +148,13 @@ contract LexNFT is LexWhiteListableMerkle {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external {
+    ) public virtual {
         require(deadline >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
 
         address owner = ownerOf[tokenId];
-        // This is reasonably safe from overflow because incrementing `nonces` beyond
-        // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits!
+
+        /// @dev This is reasonably safe from overflow because incrementing `nonces` beyond
+        // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits.
         unchecked {
             bytes32 digest = keccak256(
                 abi.encodePacked(
@@ -188,11 +181,11 @@ contract LexNFT is LexWhiteListableMerkle {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external {
+    ) public virtual {
         require(deadline >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
 
-        // This is reasonably safe from overflow because incrementing `nonces` beyond
-        // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits!
+        /// @dev This is reasonably safe from overflow because incrementing `nonces` beyond
+        // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits.
         unchecked {
             bytes32 digest = keccak256(
                 abi.encodePacked(
@@ -217,9 +210,9 @@ contract LexNFT is LexWhiteListableMerkle {
     function _mint(address to, uint256 tokenId, string memory _tokenURI) internal {
         require(ownerOf[tokenId] == address(0), "ALREADY_MINTED");
 
-        // This is reasonably safe from overflow because incrementing `nonces` beyond
+        /// @dev This is reasonably safe from overflow because incrementing `totalSupply` beyond
         // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits,
-        // and because the sum of all user balances can't exceed type(uint256).max!
+        // and because the sum of all user balances can't exceed 'type(uint256).max'.
         unchecked {
             totalSupply++;
 
@@ -238,8 +231,8 @@ contract LexNFT is LexWhiteListableMerkle {
 
         require(ownerOf[tokenId] != address(0), "NOT_MINTED");
 
-        // This is safe because a user won't ever
-        // have a balance larger than totalSupply!
+        /// @dev This is safe because a user won't ever
+        // have a balance larger than `totalSupply`.
         unchecked {
             totalSupply--;
 
