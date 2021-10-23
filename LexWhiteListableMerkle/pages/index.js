@@ -52,6 +52,8 @@ class App extends Component {
 
     const root = merkleTree.getHexRoot();
 
+    console.log(root);
+
     this.setState({ merkleTree, root });
 
   }

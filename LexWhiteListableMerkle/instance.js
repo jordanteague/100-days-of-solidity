@@ -3,7 +3,7 @@ import LexNFTIncrementalMintableOwnable from "./artifacts/contracts/LexNFTIncrem
 
 const instance = new web3.eth.Contract(
   LexNFTIncrementalMintableOwnable.abi,
-  "0x88F5FDc11dF0fA35ADAFf8b38db03eA49F4d99c5" //need address
+  "0xC0Bffc0126924B54C9370D0e3B2Ab9af096c872E" //need address
 );
 
 export default instance;
