@@ -10,9 +10,9 @@ describe("LexNFT", function () {
   beforeEach(async function() {
       [owner, addr1, addr2, addr3, addr4, addr5, addr6] = await ethers.getSigners();
 
-      LexNFT = await ethers.getContractFactory("LexNFT");
+      LexNFT = await ethers.getContractFactory("LexNFTIncrementalMintableOwnable");
 
-      lexNFT = await LexNFT.deploy("LexCoin", "LEX", 1, "ipfs://", "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199", true);
+      lexNFT = await LexNFT.deploy("LexCoin", "LEX", owner.address, true);
 
       await lexNFT.deployed();
 
