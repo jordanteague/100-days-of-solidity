@@ -21,6 +21,7 @@ contract LiteDAO {
 
     struct Proposal {
         ProposalType proposalType;
+        string description;
         address _address; // member being added/kicked; address to send money; or address receiving loot
         uint amount; // value to be minted/burned/spent
         bytes payload; // for CALL proposals
@@ -48,9 +49,10 @@ contract LiteDAO {
         _;
     }
 
-    function propose(ProposalType proposalType_, address address_, uint amount_, bytes memory payload_) external onlyTokenHolders {
+    function propose(ProposalType proposalType_, string memory description_, address address_, uint amount_, bytes memory payload_) external onlyTokenHolders {
         Proposal memory proposal = Proposal({
             proposalType: proposalType_,
+            description: description_,
             _address: address_,
             amount: amount_,
             payload: payload_,
