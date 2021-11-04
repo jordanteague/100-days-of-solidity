@@ -80,7 +80,7 @@ contract LiteDAO {
         }
     }
 
-    function processProposal(uint256 proposal_) external onlyTokenHolders {
+    function processProposal(uint256 proposal_) external payable onlyTokenHolders {
         Proposal storage proposal = proposals[proposal_];
         require(proposal.deadline < block.timestamp, "The voting period hasn't ended");
         require(proposal.processed == false, "This vote has already been executed");
@@ -101,7 +101,8 @@ contract LiteDAO {
             payable(address(_address)).transfer(_amount);
         }
         if(proposal.proposalType==ProposalType.CALL) {
-            _address.call(_payload);
+            require(address(this).balance >= msg.value, "insufficient funds");
+            _address.call{value: msg.value}(_payload);
         }
 
         proposal.processed = true;
