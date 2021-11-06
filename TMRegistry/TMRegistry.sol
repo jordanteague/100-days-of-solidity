@@ -3,7 +3,7 @@
 pragma solidity >=0.8.0;
 
 import './LexNFT.sol';
-import './LexOwnable.sol';
+import './LexPausable.sol';
 
 // the goal: on-chain verification of off-chain TM ownership
 // (this is a bridge, with hope that oneday TM registration comes onchain entirely)
@@ -13,7 +13,7 @@ import './LexOwnable.sol';
 // owner has deadline to verify wallet with secret sent to them, or else, app lapses
 // currently, TMNFT is 100% transferrable - if transfer is a hack, dispute can be filed and NFT can potentially be burned
 
-contract TMRegistry is LexNFT, LexOwnable {
+contract TMRegistry is LexNFT, LexPausable {
     event NewApplication(address, uint);
     event MarkVerified(address, uint);
     event NewDispute(uint, string);
@@ -50,7 +50,7 @@ contract TMRegistry is LexNFT, LexOwnable {
 
     /// * MOST VALUES HARD-CODED FOR TESTING ONLY * ///
     constructor(string memory secret_)
-    LexNFT("NFTrademarks", "NFTM") LexOwnable(msg.sender) {
+    LexNFT("NFTrademarks", "NFTM") LexPausable(false, msg.sender) {
         GLOBAL_SECRET = keccak256(abi.encodePacked(secret_));
         globalTokenURI = "ipfs://test";
         fee = 1; // 1 wei, for testing
@@ -61,7 +61,7 @@ contract TMRegistry is LexNFT, LexOwnable {
             string memory wordMark_,
             string memory stylizedMark_,
             string memory regNumber_
-        ) external payable {
+        ) external payable notPaused {
 
         require(msg.value == fee, "You must submit the correct fee");
 
