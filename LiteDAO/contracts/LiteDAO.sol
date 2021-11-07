@@ -133,15 +133,14 @@ contract LiteDAO {
         emit ProposalProcessed(proposal);
     }
 
-    function _weighVotes(uint256 proposal) internal virtual returns(bool) {
-        bool didProposalPass;
+    function _weighVotes(uint256 proposal) internal virtual returns(bool didProposalPass) {
+
         Proposal memory prop = proposals[proposal];
 
         if(prop.yesVotes > prop.noVotes) {
             didProposalPass = true;
         }
 
-        return didProposalPass;
     }
 
     /*///////////////////////////////////////////////////////////////
