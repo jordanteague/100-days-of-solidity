@@ -103,7 +103,7 @@ contract LiteDAO {
     function processProposal(uint256 proposal) external onlyTokenHolders {
         Proposal storage prop = proposals[proposal];
 
-        require(block.timestamp > prop.creationTime + (votingPeriod * 1 days), "VOTING_NOT_ENDED");
+        require(prop.creationTime + (votingPeriod * 1 days) < block.timestamp, "VOTING_NOT_ENDED");
 
         bool didProposalPass = _weighVotes(prop.yesVotes, prop.noVotes, voteToken.totalSupply());
 
