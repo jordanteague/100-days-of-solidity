@@ -2,15 +2,27 @@
 
 pragma solidity >=0.8.0;
 
-contract LiteDAO {
+/// @notice Vote Token interface.
+interface IVoteToken {
+    function balanceOf(address account) external view returns (uint256);
+    function getPriorVotes(address account, uint256 timestamp) external view returns (uint256);
+    function mint(address to, uint256 amount) external;
+    function burn(address from, uint256 amount) external;
+}
 
-    event newProposal(uint proposalId);
-    event proposalProcessed(uint proposalId);
+/// @notice Minimalist DAO core module.
+contract LiteDAO {
+    event NewProposal(uint256 proposalId);
+
+    event ProposalProcessed(uint256 proposalId);
 
     uint256 public proposalCount;
+
     uint256 public votingPeriod;
+
+    IVoteToken public voteToken;
+
     mapping(uint256 => Proposal) public proposals;
-    address public voteCoin;
 
     enum ProposalType {
         MINT,
@@ -22,281 +34,162 @@ contract LiteDAO {
     struct Proposal {
         ProposalType proposalType;
         string description;
-        address _address; // member being added/kicked; address to send money; or address receiving loot
-        uint amount; // value to be minted/burned/spent
-        bytes payload; // for CALL proposals
-        uint yesVotes;
-        uint noVotes;
-        uint deadline;
-        bool processed;
+        address account; // member being added/kicked; account to send money; or account receiving loot
+        address asset; // asset considered for payment
+        uint256 amount; // value to be minted/burned/spent
+        bytes payload; // data for CALL proposals
+        uint256 yesVotes;
+        uint256 noVotes;
+        uint256 creationTime;
     }
 
-    // hard coded token contract params for testing
-    constructor(uint256 _votingPeriod) {
-        votingPeriod = _votingPeriod;
+    /*///////////////////////////////////////////////////////////////
+                               CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
-        // create token contract with this contract as owner, zero tokens minted to owner
-        LexTokenMintableVotable _voteCoin = new LexTokenMintableVotable("VoteCoin", "VOTE", 0, address(this), 0);
-        voteCoin = address(_voteCoin);
-
-        // mint one token to deployer so that someone has voting power to admit additional members
-        voteCoin.call(abi.encodeWithSignature("mint(address,uint256)", msg.sender, 1));
-
+    constructor(uint256 votingPeriod_) {
+        votingPeriod = votingPeriod_;
     }
+
+    function setVoteToken(IVoteToken voteToken_) external {
+        require(address(voteToken)==address(0), "VOTETOKEN_ALREADY_SET");
+        voteToken = voteToken_;
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                         PROPOSAL LOGIC
+    //////////////////////////////////////////////////////////////*/
 
     modifier onlyTokenHolders() {
-        require(LexTokenMintableVotable(voteCoin).balanceOf(msg.sender) > 0, "You are not a token holder");
+        require(voteToken.balanceOf(msg.sender) > 0, "NOT_TOKEN_HOLDER");
         _;
     }
 
-    function propose(ProposalType proposalType_, string memory description_, address address_, uint amount_, bytes memory payload_) external onlyTokenHolders {
+    function propose(ProposalType proposalType, string memory description, address account, address asset, uint256 amount, bytes memory payload) external onlyTokenHolders {
         Proposal memory proposal = Proposal({
-            proposalType: proposalType_,
-            description: description_,
-            _address: address_,
-            amount: amount_,
-            payload: payload_,
+            proposalType: proposalType,
+            description: description,
+            account: account,
+            asset: asset,
+            amount: amount,
+            payload: payload,
             yesVotes: 0,
             noVotes: 0,
-            deadline: block.timestamp + (votingPeriod * 1 days),
-            processed: false
+            creationTime: block.timestamp
         });
 
         proposals[proposalCount] = proposal;
-        emit newProposal(proposalCount);
+
+        emit NewProposal(proposalCount);
 
         proposalCount++;
     }
 
-    function vote(uint proposal_, bool vote_) external onlyTokenHolders {
-        // need help figuring out how to integrate getPriorVotes to check voting history
-        Proposal storage proposal = proposals[proposal_];
-        //require(proposal.deadline >= block.timestamp, "The voting period has ended");
-        uint256 weight = LexTokenMintableVotable(voteCoin).balanceOf(msg.sender);
-        if(vote_ = true) {
-            proposal.yesVotes += weight;
+    function vote(uint256 proposal, bool approve) external onlyTokenHolders {
+        Proposal storage prop = proposals[proposal];
+
+        require(block.timestamp + (votingPeriod * 1 days) <= block.timestamp, "VOTING_ENDED");
+
+        uint256 weight = voteToken.getPriorVotes(msg.sender, prop.creationTime);
+
+        if (approve) {
+            prop.yesVotes += weight;
         } else {
-            proposal.noVotes += weight;
+            prop.noVotes += weight;
         }
     }
 
-    function processProposal(uint256 proposal_) external payable onlyTokenHolders {
-        Proposal storage proposal = proposals[proposal_];
-        require(proposal.deadline < block.timestamp, "The voting period hasn't ended");
-        require(proposal.processed == false, "This vote has already been executed");
-        // execute the proposal and mark as processed
+    function processProposal(uint256 proposal) external onlyTokenHolders {
+        Proposal storage prop = proposals[proposal];
 
-        address _address = proposal._address;
-        uint _amount = proposal.amount;
-        bytes memory _payload = proposal.payload;
+        require(block.timestamp > block.timestamp + (votingPeriod * 1 days), "VOTING_NOT_ENDED");
 
-        if(proposal.proposalType==ProposalType.MINT) {
-            voteCoin.call(abi.encodeWithSignature("mint(address,uint256)", _address, _amount));
-        }
-        if(proposal.proposalType==ProposalType.BURN) {
-            voteCoin.call(abi.encodeWithSignature("burn(address,uint256)", _address, _amount));
-        }
-        if(proposal.proposalType==ProposalType.SPEND) {
-            require(address(this).balance >= _amount, "insufficient funds");
-            payable(address(_address)).transfer(_amount);
-        }
-        if(proposal.proposalType==ProposalType.CALL) {
-            require(address(this).balance >= msg.value, "insufficient funds");
-            _address.call{value: msg.value}(_payload);
+        address account = prop.account;
+
+        if (prop.proposalType == ProposalType.MINT) {
+            voteToken.mint(prop.account, prop.amount);
         }
 
-        proposal.processed = true;
-        emit proposalProcessed(proposal_);
-
-    }
-
-}
-
-import './LexToken.sol';
-import './LexOwnable.sol';
-
-/// @notice LexToken with owned minting/burning and Compound-style governance.
-contract LexTokenMintableVotable is LexToken, LexOwnable {
-    bytes32 public constant DELEGATION_TYPEHASH = keccak256("Delegation(address delegatee,uint256 nonce,uint256 expiry)");
-
-    mapping(address => address) public delegates;
-    mapping(address => mapping(uint256 => Checkpoint)) public checkpoints;
-    mapping(address => uint256) public numCheckpoints;
-
-    event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
-    event DelegateVotesChanged(address indexed delegate, uint256 previousBalance, uint256 newBalance);
-
-    /// @notice Marks 'votes' from a given timestamp.
-    struct Checkpoint {
-        uint256 fromTimestamp;
-        uint256 votes;
-    }
-
-    /// @notice Initialize owned mintable LexToken with Compound-style governance.
-    /// @param _name Public name for LexToken.
-    /// @param _symbol Public symbol for LexToken.
-    /// @param _decimals Unit scaling factor - default '18' to match ETH units.
-    /// @param _owner Account to grant minting and burning ownership.
-    /// @param _initialSupply Starting LexToken supply.
-    constructor(
-        string memory _name,
-        string memory _symbol,
-        uint8 _decimals,
-        address _owner,
-        uint256 _initialSupply
-    ) LexToken(_name, _symbol, _decimals) LexOwnable(_owner) {
-        _mint(_owner, _initialSupply);
-        _delegate(_owner, _owner);
-    }
-
-    /// @notice Mints tokens by `owner`.
-    /// @param to Account to receive tokens.
-    /// @param amount Sum to mint.
-    function mint(address to, uint256 amount) external onlyOwner {
-        _mint(to, amount);
-        _moveDelegates(address(0), delegates[to], amount);
-    }
-
-    /// @notice Burns tokens by `owner`.
-    /// @param from Account that has tokens burned.
-    /// @param amount Sum to burn.
-    function burn(address from, uint256 amount) external onlyOwner {
-        _burn(from, amount);
-        _moveDelegates(delegates[from], address(0), amount);
-    }
-
-    /// @notice Delegate votes from `msg.sender` to `delegatee`.
-    /// @param delegatee The address to delegate votes to.
-    function delegate(address delegatee) external {
-        _delegate(msg.sender, delegatee);
-    }
-
-    /// @notice Delegates votes from signatory to `delegatee`.
-    /// @param delegatee The address to delegate votes to.
-    /// @param nonce The contract state required to match the signature.
-    /// @param expiry The time at which to expire the signature.
-    /// @param v The recovery byte of the signature.
-    /// @param r Half of the ECDSA signature pair.
-    /// @param s Half of the ECDSA signature pair.
-    function delegateBySig(address delegatee, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s) external {
-        bytes32 structHash = keccak256(abi.encode(DELEGATION_TYPEHASH, delegatee, nonce, expiry));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
-        address signatory = ecrecover(digest, v, r, s);
-
-        require(signatory != address(0), "ZERO_ADDRESS");
-
-        unchecked {
-            require(nonce == nonces[signatory]++, "INVALID_NONCE");
+        if (prop.proposalType == ProposalType.BURN) {
+            voteToken.burn(prop.account, prop.amount);
         }
 
-        require(block.timestamp <= expiry, "SIGNATURE_EXPIRED");
-
-        _delegate(signatory, delegatee);
-    }
-
-    /// @notice Gets the current 'votes' balance for `account`.
-    /// @param account The address to get votes balance.
-    /// @return votes The number of current 'votes' for `account`.
-    function getCurrentVotes(address account) external view returns (uint256 votes) {
-        unchecked {
-            uint256 nCheckpoints = numCheckpoints[account];
-
-            votes = nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
-        }
-    }
-
-    /// @notice Determine the prior number of 'votes' for an `account`.
-    /// @param account The address to check.
-    /// @param timestamp The unix timestamp to get the 'votes' balance at.
-    /// @return votes The number of 'votes' the `account` had as of the given unix timestamp.
-    function getPriorVotes(address account, uint256 timestamp) external view returns (uint256 votes) {
-        require(timestamp < block.timestamp, "NOT_YET_DETERMINED");
-
-        uint256 nCheckpoints = numCheckpoints[account];
-
-        if (nCheckpoints == 0) {
-            return 0;
+        if (prop.proposalType == ProposalType.SPEND) {
+            safeTransfer(prop.asset, prop.account, prop.amount);
         }
 
-        unchecked {
-            if (checkpoints[account][nCheckpoints - 1].fromTimestamp <= timestamp) {
-                return checkpoints[account][nCheckpoints - 1].votes;
+        if (prop.proposalType == ProposalType.CALL) {
+            account.call{value: prop.amount}(prop.payload);
+        }
+
+        delete proposals[proposal];
+
+        emit ProposalProcessed(proposal);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                         INTERNAL HELPER LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function safeTransfer(
+        address token,
+        address to,
+        uint256 amount
+    ) internal {
+        bool callStatus;
+
+        assembly {
+            // We'll use 4 + 32 * 2 bytes.
+            let callDataLength := 68
+
+            // Get a pointer to some free memory.
+            let freeMemoryPointer := mload(0x40)
+
+            // Update the free memory pointer for safety.
+            mstore(0x40, add(freeMemoryPointer, callDataLength))
+
+            // Write the abi-encoded calldata to memory piece by piece:
+            mstore(freeMemoryPointer, shl(224, 0xa9059cbb)) // Properly shift and append the function selector for approve(address,uint256)
+            mstore(add(freeMemoryPointer, 4), and(to, 0xffffffffffffffffffffffffffffffffffffffff)) // Mask and append the "to" argument.
+            mstore(add(freeMemoryPointer, 36), amount) // Finally append the "amount" argument. No mask as it's a full 32 byte value.
+
+            // Call the token and store if it succeeded or not.
+            callStatus := call(gas(), token, 0, freeMemoryPointer, callDataLength, 0, 0)
+        }
+
+        require(didLastOptionalReturnCallSucceed(callStatus), "TRANSFER_FAILED");
+    }
+
+    function didLastOptionalReturnCallSucceed(bool callStatus) private pure returns (bool success) {
+        assembly {
+            // Get how many bytes the call returned.
+            let returnDataSize := returndatasize()
+
+            // If the call reverted:
+            if iszero(callStatus) {
+                // Copy the revert message into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Revert with the same message.
+                revert(0, returnDataSize)
             }
 
-            if (checkpoints[account][0].fromTimestamp > timestamp) {
-                return 0;
+            switch returnDataSize
+            case 32 {
+                // Copy the return data into memory.
+                returndatacopy(0, 0, returnDataSize)
+
+                // Set success to whether it returned true.
+                success := iszero(iszero(mload(0)))
             }
-
-            uint256 lower;
-
-            uint256 upper = nCheckpoints - 1;
-
-            while (upper > lower) {
-                uint256 center = upper - (upper - lower) / 2;
-
-                Checkpoint memory cp = checkpoints[account][center];
-
-                if (cp.fromTimestamp == timestamp) {
-                    return cp.votes;
-                } else if (cp.fromTimestamp < timestamp) {
-                    lower = center;
-                } else {
-                    upper = center - 1;
-                }
+            case 0 {
+                // There was no return data.
+                success := 1
             }
-
-        return checkpoints[account][lower].votes;
-
-        }
-    }
-
-    function _delegate(address delegator, address delegatee) internal {
-        address currentDelegate = delegates[delegator];
-
-        delegates[delegator] = delegatee;
-
-        _moveDelegates(currentDelegate, delegatee, balanceOf[delegator]);
-
-        emit DelegateChanged(delegator, currentDelegate, delegatee);
-    }
-
-    function _moveDelegates(address srcRep, address dstRep, uint256 amount) internal {
-        unchecked {
-            if (srcRep != dstRep && amount > 0) {
-                if (srcRep != address(0)) {
-                    uint256 srcRepNum = numCheckpoints[srcRep];
-
-                    uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
-
-                    uint256 srcRepNew = srcRepOld - amount;
-
-                    _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
-                }
-
-                if (dstRep != address(0)) {
-                    uint256 dstRepNum = numCheckpoints[dstRep];
-
-                    uint256 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
-
-                    uint256 dstRepNew = dstRepOld + amount;
-
-                    _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
-                }
+            default {
+                // It returned some malformed input.
+                success := 0
             }
         }
-    }
-
-    function _writeCheckpoint(address delegatee, uint256 nCheckpoints, uint256 oldVotes, uint256 newVotes) internal {
-        unchecked {
-            if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromTimestamp == block.timestamp) {
-                checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
-            } else {
-                checkpoints[delegatee][nCheckpoints] = Checkpoint(block.timestamp, newVotes);
-
-                numCheckpoints[delegatee] = nCheckpoints + 1;
-            }
-        }
-
-        emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
     }
 }
