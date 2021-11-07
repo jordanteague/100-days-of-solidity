@@ -103,9 +103,10 @@ contract LiteDAO {
     function processProposal(uint256 proposal) external onlyTokenHolders {
         Proposal storage prop = proposals[proposal];
 
-        require(prop.creationTime + (votingPeriod * 1 days) < block.timestamp, "VOTING_NOT_ENDED");
+        // * COMMENTED OUT FOR TESTING * ///
+        //require(prop.creationTime + (votingPeriod * 1 days) < block.timestamp, "VOTING_NOT_ENDED");
 
-        bool didProposalPass = _weighVotes(prop.yesVotes, prop.noVotes, voteToken.totalSupply());
+        bool didProposalPass = _weighVotes(prop.yesVotes, prop.noVotes);
 
         if(didProposalPass) { // simple majority; can create module to override this
 
@@ -134,7 +135,7 @@ contract LiteDAO {
         emit ProposalProcessed(proposal);
     }
 
-    function _weighVotes(uint256 yesVotes, uint256 noVotes, uint256 totalSupply) internal virtual returns(bool didProposalPass) {
+    function _weighVotes(uint256 yesVotes, uint256 noVotes) internal virtual returns(bool didProposalPass) {
 
         if(yesVotes > noVotes) {
             didProposalPass = true;

@@ -5,9 +5,16 @@ pragma solidity >=0.8.0;
 import './LexOwnable.sol';
 import './LiteDAO.sol';
 import './VoteToken.sol';
+import './extensions/QuorumRequired.sol';
 
 contract DaoFactory is LexOwnable {
     address[] public daoRegistry;
+    mapping(address => VoteType) public voteType;
+
+    enum VoteType {
+        SIMPLE_MAJORITY,
+        SIMPLE_MAJORITY_QUORUM_REQUIRED
+    }
 
     constructor() LexOwnable(msg.sender) {
 
@@ -19,12 +26,27 @@ contract DaoFactory is LexOwnable {
           string memory symbol_,
           bool paused_,
           address[] memory voters_,
-          uint256[] memory shares_
+          uint256[] memory shares_,
+          VoteType voteType_
       ) external onlyOwner {
-        LiteDAO liteDAO_ = new LiteDAO(votingPeriod_);
-        daoRegistry.push(address(liteDAO_));
-        VoteToken voteToken_ = new VoteToken(name_, symbol_, address(liteDAO_), paused_, voters_, shares_);
-        liteDAO_.setVoteToken(IVoteToken(address(voteToken_)));
+
+        if(voteType_==VoteType.SIMPLE_MAJORITY) {
+            LiteDAO dao_ = new LiteDAO(votingPeriod_);
+            daoRegistry.push(address(dao_));
+            VoteToken voteToken_ = new VoteToken(name_, symbol_, address(dao_), paused_, voters_, shares_);
+            dao_.setVoteToken(IVoteToken(address(voteToken_)));
+            voteType[address(dao_)] = voteType_;
+        }
+
+        if(voteType_==VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED) {
+            QuorumRequired dao_ = new QuorumRequired(votingPeriod_);
+            daoRegistry.push(address(dao_));
+            VoteToken voteToken_ = new VoteToken(name_, symbol_, address(dao_), paused_, voters_, shares_);
+            dao_.setVoteToken(IVoteToken(address(voteToken_)));
+            voteType[address(dao_)] = voteType_;
+        }
+
+
     }
 
 }
