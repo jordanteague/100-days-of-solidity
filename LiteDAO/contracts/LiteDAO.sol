@@ -4,6 +4,7 @@ pragma solidity >=0.8.0;
 
 /// @notice Vote Token interface.
 interface IVoteToken {
+    function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
     function getPriorVotes(address account, uint256 timestamp) external view returns (uint256);
     function mint(address to, uint256 amount) external;
@@ -88,7 +89,7 @@ contract LiteDAO {
     function vote(uint256 proposal, bool approve) external onlyTokenHolders {
         Proposal storage prop = proposals[proposal];
 
-        require(block.timestamp + (votingPeriod * 1 days) >= block.timestamp, "VOTING_ENDED");
+        require(prop.creationTime + (votingPeriod * 1 days) >= block.timestamp, "VOTING_ENDED");
 
         uint256 weight = voteToken.getPriorVotes(msg.sender, prop.creationTime);
 
@@ -102,9 +103,9 @@ contract LiteDAO {
     function processProposal(uint256 proposal) external onlyTokenHolders {
         Proposal storage prop = proposals[proposal];
 
-        require(block.timestamp > block.timestamp + (votingPeriod * 1 days), "VOTING_NOT_ENDED");
+        require(block.timestamp > prop.creationTime + (votingPeriod * 1 days), "VOTING_NOT_ENDED");
 
-        bool didProposalPass = _weighVotes(proposal);
+        bool didProposalPass = _weighVotes(prop.yesVotes, prop.noVotes, voteToken.totalSupply());
 
         if(didProposalPass) { // simple majority; can create module to override this
 
@@ -133,11 +134,9 @@ contract LiteDAO {
         emit ProposalProcessed(proposal);
     }
 
-    function _weighVotes(uint256 proposal) internal virtual returns(bool didProposalPass) {
+    function _weighVotes(uint256 yesVotes, uint256 noVotes, uint256 totalSupply) internal virtual returns(bool didProposalPass) {
 
-        Proposal memory prop = proposals[proposal];
-
-        if(prop.yesVotes > prop.noVotes) {
+        if(yesVotes > noVotes) {
             didProposalPass = true;
         }
 
