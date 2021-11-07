@@ -385,9 +385,9 @@ contract VoteToken {
                            PAUSE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function togglePause(bool paused_) external onlyDAO {
-        paused = paused_;
+    function togglePause() external onlyDAO {
+        paused = !paused;
 
-        emit TogglePause(paused_);
+        emit TogglePause(paused);
     }
 }

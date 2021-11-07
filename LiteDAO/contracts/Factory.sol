@@ -9,7 +9,7 @@ import './VoteToken.sol';
 contract DaoFactory is LexOwnable {
     address[] public daoRegistry;
 
-    constructor(address _owner) LexOwnable(_owner) {
+    constructor() LexOwnable(msg.sender) {
 
     }
 

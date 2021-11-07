@@ -88,7 +88,7 @@ contract LiteDAO {
     function vote(uint256 proposal, bool approve) external onlyTokenHolders {
         Proposal storage prop = proposals[proposal];
 
-        require(block.timestamp + (votingPeriod * 1 days) <= block.timestamp, "VOTING_ENDED");
+        require(block.timestamp + (votingPeriod * 1 days) >= block.timestamp, "VOTING_ENDED");
 
         uint256 weight = voteToken.getPriorVotes(msg.sender, prop.creationTime);
 
@@ -104,27 +104,44 @@ contract LiteDAO {
 
         require(block.timestamp > block.timestamp + (votingPeriod * 1 days), "VOTING_NOT_ENDED");
 
-        address account = prop.account;
+        bool didProposalPass = _weighVotes(proposal);
 
-        if (prop.proposalType == ProposalType.MINT) {
-            voteToken.mint(prop.account, prop.amount);
-        }
+        if(didProposalPass) { // simple majority; can create module to override this
 
-        if (prop.proposalType == ProposalType.BURN) {
-            voteToken.burn(prop.account, prop.amount);
-        }
+            address account = prop.account;
 
-        if (prop.proposalType == ProposalType.SPEND) {
-            safeTransfer(prop.asset, prop.account, prop.amount);
-        }
+            if (prop.proposalType == ProposalType.MINT) {
+                voteToken.mint(prop.account, prop.amount);
+            }
 
-        if (prop.proposalType == ProposalType.CALL) {
-            account.call{value: prop.amount}(prop.payload);
+            if (prop.proposalType == ProposalType.BURN) {
+                voteToken.burn(prop.account, prop.amount);
+            }
+
+            if (prop.proposalType == ProposalType.SPEND) {
+                safeTransfer(prop.asset, prop.account, prop.amount);
+            }
+
+            if (prop.proposalType == ProposalType.CALL) {
+                account.call{value: prop.amount}(prop.payload);
+            }
+
         }
 
         delete proposals[proposal];
 
         emit ProposalProcessed(proposal);
+    }
+
+    function _weighVotes(uint256 proposal) internal virtual returns(bool) {
+        bool didProposalPass;
+        Proposal memory prop = proposals[proposal];
+
+        if(prop.yesVotes > prop.noVotes) {
+            didProposalPass = true;
+        }
+
+        return didProposalPass;
     }
 
     /*///////////////////////////////////////////////////////////////
