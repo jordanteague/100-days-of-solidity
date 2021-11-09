@@ -98,20 +98,20 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
     }
 
     function setVoteTypes(
-        VoteType mint,
-        VoteType burn,
-        VoteType call,
-        VoteType gov
+        uint8 mint,
+        uint8 burn,
+        uint8 call,
+        uint8 gov
     ) external {
         require(!initialized, "INITIALIZED");
 
-        proposalVoteTypes[ProposalType.MINT] = mint;
+        proposalVoteTypes[ProposalType.MINT] = VoteType(mint);
 
-        proposalVoteTypes[ProposalType.BURN] = burn;
+        proposalVoteTypes[ProposalType.BURN] = VoteType(burn);
 
-        proposalVoteTypes[ProposalType.CALL] = call;
+        proposalVoteTypes[ProposalType.CALL] = VoteType(call);
 
-        proposalVoteTypes[ProposalType.GOV] = gov;
+        proposalVoteTypes[ProposalType.GOV] = VoteType(gov);
 
         initialized = true;
     }
