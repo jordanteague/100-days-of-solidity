@@ -79,7 +79,6 @@ class App extends Component {
           let tx = await instance.methods.deposit(receiver, resolver, token, value, unixDate, nft, details)
             .send({ from: sender, value: parseInt(amount) });
           console.log(tx);
-
         } catch(error) {
           console.log(error);
         }
