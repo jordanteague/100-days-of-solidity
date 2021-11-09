@@ -5,7 +5,7 @@ pragma solidity >=0.8.0;
 /// @notice Modern and gas efficient ERC20 + EIP-2612 implementation with COMP-style governance,
 /// @author Adapted from RariCapital, https://github.com/Rari-Capital/solmate/blob/main/src/erc20/ERC20.sol,
 /// License-Identifier: AGPL-3.0-only.
-contract VoteToken {
+contract LiteDAOtoken {
     /*///////////////////////////////////////////////////////////////
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -17,8 +17,6 @@ contract VoteToken {
     event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
 
     event DelegateVotesChanged(address indexed delegate, uint256 previousBalance, uint256 newBalance);
-
-    event TransferDAO(address indexed from, address indexed to);
 
     event TogglePause(bool indexed paused);
 
@@ -45,8 +43,6 @@ contract VoteToken {
     /*///////////////////////////////////////////////////////////////
                               DAO STORAGE
     //////////////////////////////////////////////////////////////*/
-
-    address public dao;
 
     bool public paused;
 
@@ -83,7 +79,6 @@ contract VoteToken {
     constructor(
         string memory name_,
         string memory symbol_,
-        address dao_,
         bool paused_,
         address[] memory voters,
         uint256[] memory shares
@@ -92,7 +87,6 @@ contract VoteToken {
 
         name = name_;
         symbol = symbol_;
-        dao = dao_;
         paused = paused_;
 
         INITIAL_CHAIN_ID = block.chainid;
@@ -103,8 +97,6 @@ contract VoteToken {
 
             _delegate(voters[i], voters[i]);
         }
-
-        emit TransferDAO(address(0), dao_);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -159,11 +151,6 @@ contract VoteToken {
                               DAO LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyDAO() {
-        require(msg.sender == dao, "NOT_DAO");
-        _;
-    }
-
     modifier notPaused() {
         require(!paused, "PAUSED");
         _;
@@ -199,8 +186,8 @@ contract VoteToken {
         _delegate(signatory, delegatee);
     }
 
-    function getPriorVotes(address account, uint256 timestamp) external view returns (uint256 votes) {
-        require(timestamp < block.timestamp, "NOT_YET_DETERMINED");
+    function getPriorVotes(address account, uint256 timestamp) public view returns (uint256 votes) {
+        require(block.timestamp > timestamp, "NOT_YET_DETERMINED");
 
         uint256 nCheckpoints = numCheckpoints[account];
 
@@ -319,7 +306,7 @@ contract VoteToken {
         bytes32 r,
         bytes32 s
     ) external {
-        require(deadline >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
+        require(block.timestamp <= deadline, "PERMIT_DEADLINE_EXPIRED");
 
         // This is reasonably safe from overflow because incrementing `nonces` beyond
         // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits.
@@ -344,18 +331,6 @@ contract VoteToken {
     /*///////////////////////////////////////////////////////////////
                            MINT/BURN LOGIC
     //////////////////////////////////////////////////////////////*/
-
-    function mint(address to, uint256 amount) external onlyDAO {
-        _mint(to, amount);
-
-        _moveDelegates(address(0), delegates[to], amount);
-    }
-
-    function burn(address from, uint256 amount) external onlyDAO {
-        _burn(from, amount);
-
-        _moveDelegates(delegates[from], address(0), amount);
-    }
 
     function _mint(address to, uint256 amount) internal {
         totalSupply += amount;
@@ -385,7 +360,7 @@ contract VoteToken {
                            PAUSE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function togglePause() external onlyDAO {
+    function _togglePause() internal {
         paused = !paused;
 
         emit TogglePause(paused);

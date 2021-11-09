@@ -2,34 +2,49 @@
 
 pragma solidity >=0.8.0;
 
-/// @notice Vote Token interface.
-interface IVoteToken {
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function getPriorVotes(address account, uint256 timestamp) external view returns (uint256);
-    function mint(address to, uint256 amount) external;
-    function burn(address from, uint256 amount) external;
-}
+import './LiteDAOtoken.sol';
+import './LiteDAOnftHelper.sol';
 
-/// @notice Minimalist DAO core module.
-contract LiteDAO {
+/// @notice Simple gas-optimized DAO core module.
+contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
+    /*///////////////////////////////////////////////////////////////
+                                  EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event NewProposal(uint256 proposalId);
 
     event ProposalProcessed(uint256 proposalId);
+
+    /*///////////////////////////////////////////////////////////////
+                              DAO STORAGE
+    //////////////////////////////////////////////////////////////*/
 
     uint256 public proposalCount;
 
     uint256 public votingPeriod;
 
-    IVoteToken public voteToken;
+    uint256 immutable public quorum; // expressed as uint 1-100
+
+    uint256 immutable public supermajority; // expressed as uint 1-100
+
+    bool private initialized;
 
     mapping(uint256 => Proposal) public proposals;
+
+    mapping(ProposalType => VoteType) proposalVoteTypes;
 
     enum ProposalType {
         MINT,
         BURN,
-        SPEND,
-        CALL
+        CALL,
+        GOV
+    }
+
+    enum VoteType {
+        SIMPLE_MAJORITY,
+        SIMPLE_MAJORITY_QUORUM_REQUIRED,
+        SUPERMAJORITY,
+        SUPERMAJORITY_QUORUM_REQUIRED
     }
 
     struct Proposal {
@@ -48,13 +63,47 @@ contract LiteDAO {
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(uint256 votingPeriod_) {
+    constructor(
+        string memory name_,
+        string memory symbol_,
+        bool paused_,
+        address[] memory voters,
+        uint256[] memory shares,
+        uint256 votingPeriod_,
+        uint256 quorum_,
+        uint256 supermajority_
+    )
+        LiteDAOtoken(
+            name_,
+            symbol_,
+            paused_,
+            voters,
+            shares
+        )
+
+    {
         votingPeriod = votingPeriod_;
+        quorum = quorum_;
+        supermajority = supermajority_;
     }
 
-    function setVoteToken(IVoteToken voteToken_) external {
-        require(address(voteToken)==address(0), "VOTETOKEN_ALREADY_SET");
-        voteToken = voteToken_;
+    function setVoteTypes(
+        VoteType mint,
+        VoteType burn,
+        VoteType call,
+        VoteType gov
+    ) external {
+        require(!initialized, "INITIALIZED");
+
+        proposalVoteTypes[ProposalType.MINT] = mint;
+
+        proposalVoteTypes[ProposalType.BURN] = burn;
+
+        proposalVoteTypes[ProposalType.CALL] = call;
+
+        proposalVoteTypes[ProposalType.GOV] = gov;
+
+        initialized = true;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -62,12 +111,21 @@ contract LiteDAO {
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyTokenHolders() {
-        require(voteToken.balanceOf(msg.sender) > 0, "NOT_TOKEN_HOLDER");
+        require(balanceOf[msg.sender] > 0, "NOT_TOKEN_HOLDER");
         _;
     }
 
-    function propose(ProposalType proposalType, string memory description, address account, address asset, uint256 amount, bytes memory payload) external onlyTokenHolders {
-        Proposal memory proposal = Proposal({
+    function propose(
+        ProposalType proposalType,
+        string calldata description,
+        address account,
+        address asset,
+        uint256 amount,
+        bytes calldata payload
+    ) external onlyTokenHolders {
+        uint256 proposalId = proposalCount;
+
+        proposals[proposalId] = Proposal({
             proposalType: proposalType,
             description: description,
             account: account,
@@ -79,19 +137,21 @@ contract LiteDAO {
             creationTime: block.timestamp
         });
 
-        proposals[proposalCount] = proposal;
+        unchecked {
+            proposalCount++;
+        }
 
-        emit NewProposal(proposalCount);
-
-        proposalCount++;
+        emit NewProposal(proposalId);
     }
 
     function vote(uint256 proposal, bool approve) external onlyTokenHolders {
         Proposal storage prop = proposals[proposal];
 
-        require(prop.creationTime + (votingPeriod * 1 days) >= block.timestamp, "VOTING_ENDED");
+        unchecked {
+            require(block.timestamp <= prop.creationTime + votingPeriod, "VOTING_ENDED");
+        }
 
-        uint256 weight = voteToken.getPriorVotes(msg.sender, prop.creationTime);
+        uint256 weight = getPriorVotes(msg.sender, prop.creationTime);
 
         if (approve) {
             prop.yesVotes += weight;
@@ -100,32 +160,34 @@ contract LiteDAO {
         }
     }
 
-    function processProposal(uint256 proposal) external onlyTokenHolders {
+    function processProposal(uint256 proposal) external returns (bool success) {
         Proposal storage prop = proposals[proposal];
 
         // * COMMENTED OUT FOR TESTING * ///
-        //require(prop.creationTime + (votingPeriod * 1 days) < block.timestamp, "VOTING_NOT_ENDED");
+        // unchecked {
+        // require(block.timestamp > prop.creationTime + votingPeriod, "VOTING_NOT_ENDED");
+        // }
 
-        bool didProposalPass = _weighVotes(prop.yesVotes, prop.noVotes);
+        VoteType voteType = proposalVoteTypes[prop.proposalType];
 
-        if(didProposalPass) { // simple majority; can create module to override this
+        bool didProposalPass = _countVotes(voteType, prop.yesVotes, prop.noVotes);
 
-            address account = prop.account;
-
+        if (didProposalPass) { // simple majority; can use module to override this
             if (prop.proposalType == ProposalType.MINT) {
-                voteToken.mint(prop.account, prop.amount);
+                _mint(prop.account, prop.amount);
             }
 
             if (prop.proposalType == ProposalType.BURN) {
-                voteToken.burn(prop.account, prop.amount);
-            }
-
-            if (prop.proposalType == ProposalType.SPEND) {
-                safeTransfer(prop.asset, prop.account, prop.amount);
+                _burn(prop.account, prop.amount);
             }
 
             if (prop.proposalType == ProposalType.CALL) {
-                account.call{value: prop.amount}(prop.payload);
+                (success, ) = prop.account.call{value: prop.amount}(prop.payload);
+            }
+
+            if (prop.proposalType == ProposalType.GOV) {
+                if (prop.amount > 0) votingPeriod = prop.amount;
+                if (prop.payload.length > 0) _togglePause();
             }
 
         }
@@ -135,76 +197,39 @@ contract LiteDAO {
         emit ProposalProcessed(proposal);
     }
 
-    function _weighVotes(uint256 yesVotes, uint256 noVotes) internal virtual returns(bool didProposalPass) {
+    function _countVotes(
+        VoteType voteType,
+        uint256 yesVotes,
+        uint256 noVotes
+    ) internal view returns (bool didProposalPass) {
+        // rule out any failed quorums
+        if(voteType == VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED || voteType == VoteType.SUPERMAJORITY_QUORUM_REQUIRED) {
+            unchecked {
+                uint256 minVotes = (totalSupply * quorum) / 100;
 
-        if(yesVotes > noVotes) {
-            didProposalPass = true;
+                uint256 votes = yesVotes + noVotes;
+
+                require(votes >= minVotes, "QUORUM_REQUIRED");
+            }
         }
 
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                         INTERNAL HELPER LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function safeTransfer(
-        address token,
-        address to,
-        uint256 amount
-    ) internal {
-        bool callStatus;
-
-        assembly {
-            // We'll use 4 + 32 * 2 bytes.
-            let callDataLength := 68
-
-            // Get a pointer to some free memory.
-            let freeMemoryPointer := mload(0x40)
-
-            // Update the free memory pointer for safety.
-            mstore(0x40, add(freeMemoryPointer, callDataLength))
-
-            // Write the abi-encoded calldata to memory piece by piece:
-            mstore(freeMemoryPointer, shl(224, 0xa9059cbb)) // Properly shift and append the function selector for approve(address,uint256)
-            mstore(add(freeMemoryPointer, 4), and(to, 0xffffffffffffffffffffffffffffffffffffffff)) // Mask and append the "to" argument.
-            mstore(add(freeMemoryPointer, 36), amount) // Finally append the "amount" argument. No mask as it's a full 32 byte value.
-
-            // Call the token and store if it succeeded or not.
-            callStatus := call(gas(), token, 0, freeMemoryPointer, callDataLength, 0, 0)
+        // simple majority
+        if(voteType == VoteType.SIMPLE_MAJORITY || voteType == VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED) {
+            if (yesVotes > noVotes) {
+                didProposalPass = true;
+            }
         }
 
-        require(didLastOptionalReturnCallSucceed(callStatus), "TRANSFER_FAILED");
-    }
+        // supermajority
+        if(voteType == VoteType.SUPERMAJORITY || voteType == VoteType.SUPERMAJORITY_QUORUM_REQUIRED) {
+            // example: 7 yes, 2 no, supermajority = 66
+            // ((7+2) * 66) / 100 = 5.94; 7 yes will pass
+            unchecked {
+                uint256 minYes = ((yesVotes + noVotes) * supermajority) / 100;
 
-    function didLastOptionalReturnCallSucceed(bool callStatus) private pure returns (bool success) {
-        assembly {
-            // Get how many bytes the call returned.
-            let returnDataSize := returndatasize()
-
-            // If the call reverted:
-            if iszero(callStatus) {
-                // Copy the revert message into memory.
-                returndatacopy(0, 0, returnDataSize)
-
-                // Revert with the same message.
-                revert(0, returnDataSize)
-            }
-
-            switch returnDataSize
-            case 32 {
-                // Copy the return data into memory.
-                returndatacopy(0, 0, returnDataSize)
-
-                // Set success to whether it returned true.
-                success := iszero(iszero(mload(0)))
-            }
-            case 0 {
-                // There was no return data.
-                success := 1
-            }
-            default {
-                // It returned some malformed input.
-                success := 0
+                if (yesVotes >= minYes) {
+                    didProposalPass = true;
+                }
             }
         }
     }
