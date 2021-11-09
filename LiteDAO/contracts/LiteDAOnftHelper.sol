@@ -10,7 +10,7 @@ contract LiteDAOnftHelper {
         uint256,
         bytes calldata
     ) external pure returns (bytes4 sig) {
-        sig = 0x150b7a02; // 'onERC721Received(address,address,uint,bytes)'
+        sig = 0x150b7a02; // 'onERC721Received(address,address,uint256,bytes)'
     }
 
     function onERC1155Received(
@@ -20,6 +20,6 @@ contract LiteDAOnftHelper {
         uint256,
         bytes calldata
     ) external pure returns (bytes4 sig) {
-        sig = 0xf23a6e61; // 'onERC1155Received(address,address,uint,uint,bytes)'
+        sig = 0xf23a6e61; // 'onERC1155Received(address,address,uint256,uint256,bytes)'
     }
 }
