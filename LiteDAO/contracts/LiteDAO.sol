@@ -11,9 +11,11 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event NewProposal(uint256 proposalId);
+    event NewProposal(uint256 indexed proposal);
+    
+    event VoteCast(address indexed voter, uint256 indexed proposal, bool indexed approve);
 
-    event ProposalProcessed(uint256 proposalId);
+    event ProposalProcessed(uint256 indexed proposal);
 
     /*///////////////////////////////////////////////////////////////
                               DAO STORAGE
@@ -23,15 +25,17 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
 
     uint256 public votingPeriod;
 
-    uint256 immutable public quorum; // expressed as uint 1-100
+    uint256 immutable public quorum; // 1-100
 
-    uint256 immutable public supermajority; // expressed as uint 1-100
+    uint256 immutable public supermajority; // 1-100
 
     bool private initialized;
 
     mapping(uint256 => Proposal) public proposals;
 
-    mapping(ProposalType => VoteType) proposalVoteTypes;
+    mapping(ProposalType => VoteType) public proposalVoteTypes;
+    
+    mapping(uint256 => mapping(address => bool)) public voted;
 
     enum ProposalType {
         MINT,
@@ -82,8 +86,14 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
         )
 
     {
+        require(quorum_ <= 100, "QUORUM_MAX");
+        
+        require(supermajority_ <= 100, "SUPERMAJORITY_MAX");
+        
         votingPeriod = votingPeriod_;
+        
         quorum = quorum_;
+        
         supermajority = supermajority_;
     }
 
@@ -123,9 +133,9 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
         uint256 amount,
         bytes calldata payload
     ) external onlyTokenHolders {
-        uint256 proposalId = proposalCount;
+        uint256 proposal = proposalCount;
 
-        proposals[proposalId] = Proposal({
+        proposals[proposal] = Proposal({
             proposalType: proposalType,
             description: description,
             account: account,
@@ -136,43 +146,55 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
             noVotes: 0,
             creationTime: block.timestamp
         });
-
+        
+        // this is reasonably safe from overflow because incrementing `proposalCount` beyond
+        // 'type(uint256).max' is exceedingly unlikely compared to optimization benefits
         unchecked {
             proposalCount++;
         }
 
-        emit NewProposal(proposalId);
+        emit NewProposal(proposal);
     }
 
     function vote(uint256 proposal, bool approve) external onlyTokenHolders {
+        require(!voted[proposal][msg.sender], "ALREADY_VOTED");
+        
         Proposal storage prop = proposals[proposal];
-
+        
+        // this is safe from overflow because `votingPeriod` is capped so it will not combine
+        // with unix time to exceed 'type(uint256).max'
         unchecked {
             require(block.timestamp <= prop.creationTime + votingPeriod, "VOTING_ENDED");
         }
 
         uint256 weight = getPriorVotes(msg.sender, prop.creationTime);
-
-        if (approve) {
-            prop.yesVotes += weight;
-        } else {
-            prop.noVotes += weight;
+        
+        unchecked { 
+            if (approve) {
+                prop.yesVotes += weight;
+            } else {
+                prop.noVotes += weight;
+            }
         }
+        
+        voted[proposal][msg.sender] = true;
+        
+        emit VoteCast(msg.sender, proposal, approve);
     }
 
     function processProposal(uint256 proposal) external returns (bool success) {
         Proposal storage prop = proposals[proposal];
+        
+        VoteType voteType = proposalVoteTypes[prop.proposalType];
 
         // * COMMENTED OUT FOR TESTING * ///
         // unchecked {
         // require(block.timestamp > prop.creationTime + votingPeriod, "VOTING_NOT_ENDED");
         // }
 
-        VoteType voteType = proposalVoteTypes[prop.proposalType];
-
         bool didProposalPass = _countVotes(voteType, prop.yesVotes, prop.noVotes);
 
-        if (didProposalPass) { // simple majority; can use module to override this
+        if (didProposalPass) {
             if (prop.proposalType == ProposalType.MINT) {
                 _mint(prop.account, prop.amount);
             }
@@ -203,10 +225,12 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
         uint256 noVotes
     ) internal view returns (bool didProposalPass) {
         // rule out any failed quorums
-        if(voteType == VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED || voteType == VoteType.SUPERMAJORITY_QUORUM_REQUIRED) {
+        if (voteType == VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED || voteType == VoteType.SUPERMAJORITY_QUORUM_REQUIRED) {
+            uint256 minVotes = (totalSupply * quorum) / 100;
+            
+            // this is safe from overflow because `yesVotes` and `noVotes` are capped by `totalSupply`
+            // which is checked for overflow in `VoteToken` contract
             unchecked {
-                uint256 minVotes = (totalSupply * quorum) / 100;
-
                 uint256 votes = yesVotes + noVotes;
 
                 require(votes >= minVotes, "QUORUM_REQUIRED");
@@ -214,22 +238,20 @@ contract LiteDAO is LiteDAOtoken, LiteDAOnftHelper {
         }
 
         // simple majority
-        if(voteType == VoteType.SIMPLE_MAJORITY || voteType == VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED) {
+        if (voteType == VoteType.SIMPLE_MAJORITY || voteType == VoteType.SIMPLE_MAJORITY_QUORUM_REQUIRED) {
             if (yesVotes > noVotes) {
                 didProposalPass = true;
             }
         }
 
         // supermajority
-        if(voteType == VoteType.SUPERMAJORITY || voteType == VoteType.SUPERMAJORITY_QUORUM_REQUIRED) {
+        if (voteType == VoteType.SUPERMAJORITY || voteType == VoteType.SUPERMAJORITY_QUORUM_REQUIRED) {
             // example: 7 yes, 2 no, supermajority = 66
             // ((7+2) * 66) / 100 = 5.94; 7 yes will pass
-            unchecked {
-                uint256 minYes = ((yesVotes + noVotes) * supermajority) / 100;
+            uint256 minYes = ((yesVotes + noVotes) * supermajority) / 100;
 
-                if (yesVotes >= minYes) {
-                    didProposalPass = true;
-                }
+            if (yesVotes >= minYes) {
+                didProposalPass = true;
             }
         }
     }
